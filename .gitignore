@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Environment files (keep the template committed)
+.env
+.env.*
+!.env.example
+
+# Playwright artifacts
+playwright-report/
+test-results/
+blob-report/
+.allure/
+allure-results/
+allure-report/
+
+# Cucumber artifacts
+reports/
+
+# Logs
+logs/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# TypeScript build output (not used, but avoid accidental artifacts)
+dist/

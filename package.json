@@ -1,0 +1,42 @@
+{
+  "name": "eventhub-playwright-framework",
+  "version": "1.0.0",
+  "description": "Hybrid BDD (Cucumber) UI + API automation framework for EventHub built with Playwright, TypeScript and Winston",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "test": "npm run test:api && npm run test:bdd",
+    "test:api": "playwright test --project=api",
+    "test:bdd": "cucumber-js",
+    "test:ui": "cucumber-js",
+    "test:login": "cucumber-js --tags @login",
+    "test:bdd:smoke": "cucumber-js --profile smoke",
+    "test:bdd:headed": "cross-env HEADED=true cucumber-js",
+    "test:bdd:debug": "cross-env PWDEBUG=1 HEADED=true cucumber-js",
+    "test:headed": "npm run test:bdd:headed",
+    "test:debug": "npm run test:bdd:debug",
+    "test:smoke": "playwright test --project=api --grep @smoke && cucumber-js --profile smoke",
+    "typecheck": "tsc --noEmit",
+    "report": "playwright show-report",
+    "report:bdd": "node scripts/open-report.mjs reports/cucumber-report.html",
+    "report:allure": "allure generate allure-results --clean -o allure-report && allure open allure-report",
+    "install:browsers": "playwright install chromium"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.9",
+    "winston": "^3.19.0"
+  },
+  "devDependencies": {
+    "@cucumber/cucumber": "^13.3.0",
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^26.6.6",
+    "allure-commandline": "^2.46.1",
+    "allure-playwright": "^3.14.0",
+    "cross-env": "^10.1.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
