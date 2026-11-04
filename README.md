@@ -486,39 +486,48 @@ test('@smoke GET /events returns events', async ({ api, logger }, testInfo) => {
 
 ---
 
-## 11. CI (ejemplo)
+## 11. CI/CD (GitHub Actions + GitHub Pages)
 
-```yaml
-name: eventhub-tests
-on: [push, pull_request]
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 26
-          cache: npm
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npm test
-        env:
-          CI: true
-          EVENTHUB_EMAIL: ${{ secrets.EVENTHUB_EMAIL }}
-          EVENTHUB_PASSWORD: ${{ secrets.EVENTHUB_PASSWORD }}
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: test-reports
-          path: |
-            reports/
-            playwright-report/
-            allure-results/
-```
+Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 
-En CI, `playwright.config.ts` activa `retries: 2`, `workers: 2` y `forbidOnly`
-para la capa API.
+Se dispara en `push` a `main`/`master`, en `pull_request` y manualmente
+(`workflow_dispatch`). API y UI se ejecutan **en paralelo**:
+
+| Job | Qué ejecuta | Artefactos |
+|---|---|---|
+| `api` | `npm run typecheck` + `npm run test:api` (Playwright, sin navegador) y genera Allure | `api-playwright-report`, `api-allure-report`, `api-logs` |
+| `ui` | instala Chromium y ejecuta `npm run test:bdd` (Cucumber) | `ui-cucumber-report`, `ui-logs` |
+| `deploy-reports` | descarga los reportes, construye `site/` con `scripts/build-pages.mjs` y publica en GitHub Pages | — |
+
+La página publicada (`https://<usuario>.github.io/<repo>/`) incluye enlaces a:
+
+- **API · Playwright HTML** (`api/playwright/`)
+- **API · Allure** (`api/allure/`)
+- **UI · Cucumber** (`ui/cucumber-report.html`)
+
+y un resumen con el estado de cada job (passed/failed), rama, commit y número
+de ejecución. Aunque un job falle, `deploy-reports` se ejecuta igual
+(`if: always()`) para que el fallo sea inspeccionable; si un reporte no se
+generó, su tarjeta aparece como “No disponible”.
+
+Los artefactos completos quedan descargables en la pestaña **Actions** de cada
+ejecución (reportes: 30 días, logs: 7 días). Los logs no se publican en Pages
+porque pueden contener emails y datos de eventos.
+
+### Configuración inicial (una sola vez)
+
+1. **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+   Ya está habilitado en este repositorio; si se recrea o se hace fork, hay que
+   activarlo manualmente (el `GITHUB_TOKEN` por defecto no puede habilitarlo).
+2. (Opcional) **Settings → Secrets and variables → Actions**: crear
+   `EVENTHUB_EMAIL` y `EVENTHUB_PASSWORD`. Si no existen, se usan las
+   credenciales de práctica por defecto de `src/config/env.config.ts`.
+3. Push a `main`/`master` y revisar la pestaña **Actions**.
+
+En CI el workflow define `CI=true` y `TEST_ENV=ci`; no hay `.env` en el
+runner, por lo que `playwright.config.ts` activa `retries: 2`, `workers: 2` y
+`forbidOnly` para la capa API. La carpeta `site/` (ensamblado de Pages) está
+ignorada por git.
 
 ---
 

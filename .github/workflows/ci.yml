@@ -1,0 +1,205 @@
+name: CI
+
+# Runs the API (Playwright) and UI (Cucumber BDD) suites in parallel and
+# publishes every report to GitHub Pages, plus downloadable per-run artifacts.
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CI: true
+  TEST_ENV: ci
+  # Secrets are optional: env.config.ts falls back to the practice-account
+  # defaults when these are empty (e.g. pull requests from forks).
+  EVENTHUB_EMAIL: ${{ secrets.EVENTHUB_EMAIL }}
+  EVENTHUB_PASSWORD: ${{ secrets.EVENTHUB_PASSWORD }}
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # API layer - Playwright Test (APIRequestContext, no browser required)
+  # ---------------------------------------------------------------------------
+  api:
+    name: API tests (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Set up Java (required by Allure CLI)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Run API tests
+        run: npm run test:api
+
+      - name: Generate Allure report
+        if: always()
+        run: |
+          if [ -d allure-results ]; then
+            npx allure generate allure-results --clean -o allure-report
+          else
+            echo "No allure-results directory found; skipping Allure report."
+          fi
+
+      - name: Upload Playwright HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-playwright-report
+          path: playwright-report
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload Allure report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-allure-report
+          path: allure-report
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload API logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-logs
+          path: logs
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # UI layer - Cucumber BDD driving Chromium through Playwright
+  # ---------------------------------------------------------------------------
+  ui:
+    name: UI tests (Cucumber BDD)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run UI (BDD) tests
+        run: npm run test:bdd
+
+      - name: Upload Cucumber report (HTML / JSON / JUnit)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-cucumber-report
+          path: reports
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload UI logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-logs
+          path: logs
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Reports - assemble a static site and deploy it to GitHub Pages.
+  # Runs even when the test jobs fail so failures are always inspectable.
+  # ---------------------------------------------------------------------------
+  deploy-reports:
+    name: Publish reports to GitHub Pages
+    needs: [api, ui]
+    if: always() && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Playwright report (API)
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: api-playwright-report
+          path: site/api/playwright
+
+      - name: Download Allure report (API)
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: api-allure-report
+          path: site/api/allure
+
+      - name: Download Cucumber report (UI)
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-cucumber-report
+          path: site/ui
+
+      - name: Build reports landing page
+        env:
+          API_RESULT: ${{ needs.api.result }}
+          UI_RESULT: ${{ needs.ui.result }}
+        run: node scripts/build-pages.mjs
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

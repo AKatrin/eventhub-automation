@@ -17,6 +17,9 @@ allure-report/
 # Cucumber artifacts
 reports/
 
+# GitHub Pages assembly folder (CI only)
+site/
+
 # Logs
 logs/
 
